@@ -36,13 +36,13 @@ conds:
   - when: mos.platform == "cc3200"
     apply:
       sources:
-        - library/cc32xx
+        - src/cc32xx
       includes:
         - include/cc32xx
   - when: mos.platform == "cc3220"
     apply:
       sources:
-        - library/cc32xx
+        - src/cc32xx
       includes:
         - include/cc32xx
 
