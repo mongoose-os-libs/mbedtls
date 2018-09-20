@@ -16,7 +16,6 @@ includes:
 cdefs:
   MBEDTLS_X509_CA_CHAIN_ON_DISK: 1
   MG_SSL_IF_MBEDTLS_FREE_CERTS: 1
-  MG_SSL_IF_MBEDTLS_MAX_FRAG_LEN: 1024
 
 config_schema:
   - ["debug.mbedtls_level", "i", 0, {title: "mbedTLS debug level"}]
@@ -45,6 +44,11 @@ conds:
         - library/cc32xx
       includes:
         - include/cc32xx
+
+  - when: mos.platform != "esp32"
+    apply:
+      cdefs:
+        MG_SSL_IF_MBEDTLS_MAX_FRAG_LEN: 1024
 
 tags:
   - c
