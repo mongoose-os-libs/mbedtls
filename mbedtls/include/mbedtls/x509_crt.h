@@ -90,10 +90,6 @@ typedef struct mbedtls_x509_crt
     mbedtls_pk_type_t sig_pk;           /**< Internal representation of the Public Key algorithm of the signature algorithm, e.g. MBEDTLS_PK_RSA */
     void *sig_opts;             /**< Signature options to be passed to mbedtls_pk_verify_ext(), e.g. for RSASSA-PSS */
 
-#if defined(MBEDTLS_PEM_PARSE_C) && defined(MBEDTLS_X509_CA_CHAIN_ON_DISK)
-    const char *ca_chain_file; /**< Used to store the name of the file with the CA chain, instead of the chain itself. During verification, certificates are loaded in demand and the in-memory chain is never longer than one. */
-#endif
-
     struct mbedtls_x509_crt *next;     /**< Next certificate in the CA-chain. */
 }
 mbedtls_x509_crt;
@@ -109,7 +105,7 @@ mbedtls_x509_crt;
  *
  * All lists are bitfields, built by ORing flags from MBEDTLS_X509_ID_FLAG().
  */
-typedef struct
+typedef struct mbedtls_x509_crt_profile
 {
     uint32_t allowed_mds;       /**< MDs for signatures         */
     uint32_t allowed_pks;       /**< PK algs for signatures     */
@@ -295,8 +291,15 @@ int mbedtls_x509_crt_verify_info( char *buf, size_t size, const char *prefix,
  *                 used to sign the certificate, CRL verification is skipped
  *                 silently, that is *without* setting any flag.
  *
+ * \note           The \c trust_ca list can contain two types of certificates:
+ *                 (1) those of trusted root CAs, so that certificates
+ *                 chaining up to those CAs will be trusted, and (2)
+ *                 self-signed end-entity certificates to be trusted (for
+ *                 specific peers you know) - in that case, the self-signed
+ *                 certificate doesn't need to have the CA bit set.
+ *
  * \param crt      a certificate (chain) to be verified
- * \param trust_ca the list of trusted CAs
+ * \param trust_ca the list of trusted CAs (see note above)
  * \param ca_crl   the list of CRLs for trusted CAs (see note above)
  * \param cn       expected Common Name (can be set to
  *                 NULL if the CN must not be verified)
@@ -314,6 +317,7 @@ int mbedtls_x509_crt_verify_info( char *buf, size_t size, const char *prefix,
  */
 int mbedtls_x509_crt_verify( mbedtls_x509_crt *crt,
                      mbedtls_x509_crt *trust_ca,
+                     const char *trust_ca_file,
                      mbedtls_x509_crl *ca_crl,
                      const char *cn, uint32_t *flags,
                      int (*f_vrfy)(void *, mbedtls_x509_crt *, int, uint32_t *),
@@ -348,6 +352,7 @@ int mbedtls_x509_crt_verify( mbedtls_x509_crt *crt,
  */
 int mbedtls_x509_crt_verify_with_profile( mbedtls_x509_crt *crt,
                      mbedtls_x509_crt *trust_ca,
+                     const char *trust_ca_file,
                      mbedtls_x509_crl *ca_crl,
                      const mbedtls_x509_crt_profile *profile,
                      const char *cn, uint32_t *flags,

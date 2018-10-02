@@ -15,11 +15,12 @@ includes:
 
 cdefs:
   MBEDTLS_X509_CA_CHAIN_ON_DISK: 1
+  MBEDTLS_USER_CONFIG_FILE: '\"mbedtls_platform_config.h\"'
   MG_SSL_IF_MBEDTLS_FREE_CERTS: 1
   MG_SSL_IF_MBEDTLS_MAX_FRAG_LEN: 1024
 
 config_schema:
-  - ["debug.mbedtls_level", "i", 0, {title: "mbedTLS debug level"}]
+  - ["debug.mbedtls_level", "i", 1, {title: "mbedTLS debug level"}]
 
 conds:
   # On CC3200 we use SimpleLink for SSL due to lack of space.
