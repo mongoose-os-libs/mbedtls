@@ -9,6 +9,7 @@
 #define MBEDTLS_MPI_MUL_MPI_ALT
 #define MBEDTLS_MPI_EXP_MOD_ALT
 
+#define MBEDTLS_CIPHER_MODE_XTS
 #define ESP32_MBEDTLS_DYN_BUF_CANARY
 
 /* no_extern_c_check */
