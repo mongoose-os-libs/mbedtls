@@ -48,8 +48,8 @@
  *    Major version | Minor version | Patch version
  */
 #define MBEDTLS_VERSION_NUMBER         0x020D0100
-#define MBEDTLS_VERSION_STRING         "2.13.1-cesanta2"
-#define MBEDTLS_VERSION_STRING_FULL    "mbed TLS 2.13.1-cesanta2"
+#define MBEDTLS_VERSION_STRING         "2.13.1-cesanta3"
+#define MBEDTLS_VERSION_STRING_FULL    "mbed TLS 2.13.1-cesanta3"
 
 #if defined(MBEDTLS_VERSION_C)
 
