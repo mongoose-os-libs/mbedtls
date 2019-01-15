@@ -1784,7 +1784,7 @@
  *            it, and considering stronger ciphers instead.
  *
  */
-//#define MBEDTLS_ARC4_C
+#define MBEDTLS_ARC4_C_ONLY
 
 /**
  * \def MBEDTLS_ASN1_PARSE_C
@@ -2085,7 +2085,7 @@
  * \warning   DES is considered a weak cipher and its use constitutes a
  *            security risk. We recommend considering stronger ciphers instead.
  */
-//#define MBEDTLS_DES_C
+#define MBEDTLS_DES_C_ONLY
 
 /**
  * \def MBEDTLS_DHM_C
@@ -2321,7 +2321,7 @@
  *            it, and considering stronger message digests instead.
  *
  */
-//#define MBEDTLS_MD4_C
+#define MBEDTLS_MD4_C_ONLY
 
 /**
  * \def MBEDTLS_MD5_C
