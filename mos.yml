@@ -1,7 +1,7 @@
 author: mongoose-os
 description: Implements SPI API on Mongoose OS
 type: lib
-version: 2.8.0-cesanta1
+version: 2.16.0-cesanta1
 
 sources:
   - src
@@ -16,9 +16,6 @@ includes:
 cdefs:
   MBEDTLS_X509_CA_CHAIN_ON_DISK: 1
   MBEDTLS_USER_CONFIG_FILE: '\"mbedtls_platform_config.h\"'
-  MG_SSL_IF_MBEDTLS_FREE_CERTS: 1
-  # Disabled for now because of fragmented handshake issue.
-  # MG_SSL_IF_MBEDTLS_MAX_FRAG_LEN: 1024
 
 config_schema:
   - ["debug.mbedtls_level", "i", 1, {title: "mbedTLS debug level"}]
