@@ -30,7 +30,7 @@ conds:
         MG_SSL_IF: MG_SSL_IF_MBEDTLS
         MBEDTLS_ECP_ATCA: 1
       libs:
-        - origin: https://github.com/mongoose-os-libs/atca
+        - origin: https://github.com/cesanta/mongoose-os/libs/atca
 
   - when: mos.platform == "cc3200"
     apply:
