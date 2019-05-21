@@ -14,8 +14,16 @@ includes:
   - mbedtls/include
 
 cdefs:
-  MBEDTLS_X509_CA_CHAIN_ON_DISK: 1
   MBEDTLS_USER_CONFIG_FILE: '\"mbedtls_platform_config.h\"'
+  # Do not load CA chain into memory, read it from file during verification.
+  # This make handshake slower but saves a lot of memory.
+  MBEDTLS_X509_CA_CHAIN_ON_DISK: 1
+  # All the certificates in the server's chain except the client certificate
+  # are released as soon as possible to save RAM.
+  # They are therefore not available for examination after handshake,
+  # but we don't care: Mongoose frees them immediately anyway
+  # (`MG_SSL_IF_MBEDTLS_FREE_CERTS` is set).
+  MBEDTLS_FREE_CERT_CHAIN: 1
 
 config_schema:
   - ["debug.mbedtls_level", "i", 1, {title: "mbedTLS debug level"}]
