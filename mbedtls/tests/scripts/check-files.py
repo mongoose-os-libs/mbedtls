@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
+
+# This file is part of Mbed TLS (https://tls.mbed.org)
+# Copyright (c) 2018, Arm Limited, All Rights Reserved
+
 """
-This file is part of Mbed TLS (https://tls.mbed.org)
-
-Copyright (c) 2018, Arm Limited, All Rights Reserved
-
-Purpose
-
 This script checks the current state of the source code for minor issues,
 including incorrect file permissions, presence of tabs, non-Unix line endings,
-trailing whitespace, presence of UTF-8 BOM, and TODO comments.
+trailing whitespace, and presence of UTF-8 BOM.
 Note: requires python 3, must be run from Mbed TLS root.
 """
 
@@ -19,14 +17,23 @@ import codecs
 import sys
 
 
-class IssueTracker(object):
-    """Base class for issue tracking. Issues should inherit from this and
-    overwrite either issue_with_line if they check the file line by line, or
-    overwrite check_file_for_issue if they check the file as a whole."""
+class FileIssueTracker(object):
+    """Base class for file-wide issue tracking.
+
+    To implement a checker that processes a file as a whole, inherit from
+    this class and implement `check_file_for_issue` and define ``heading``.
+
+    ``files_exemptions``: files whose name ends with a string in this set
+     will not be checked.
+
+    ``heading``: human-readable description of the issue
+    """
+
+    files_exemptions = frozenset()
+    # heading must be defined in derived classes.
+    # pylint: disable=no-member
 
     def __init__(self):
-        self.heading = ""
-        self.files_exemptions = []
         self.files_with_issues = {}
 
     def should_check_file(self, filepath):
@@ -35,22 +42,13 @@ class IssueTracker(object):
                 return False
         return True
 
-    def issue_with_line(self, line):
-        raise NotImplementedError
-
     def check_file_for_issue(self, filepath):
-        with open(filepath, "rb") as f:
-            for i, line in enumerate(iter(f.readline, b"")):
-                self.check_file_line(filepath, line, i + 1)
+        raise NotImplementedError
 
     def record_issue(self, filepath, line_number):
         if filepath not in self.files_with_issues.keys():
             self.files_with_issues[filepath] = []
         self.files_with_issues[filepath].append(line_number)
-
-    def check_file_line(self, filepath, line, line_number):
-        if self.issue_with_line(line):
-            self.record_issue(filepath, line_number)
 
     def output_file_issues(self, logger):
         if self.files_with_issues.values():
@@ -64,24 +62,44 @@ class IssueTracker(object):
                     logger.info(filename)
             logger.info("")
 
+class LineIssueTracker(FileIssueTracker):
+    """Base class for line-by-line issue tracking.
 
-class PermissionIssueTracker(IssueTracker):
+    To implement a checker that processes files line by line, inherit from
+    this class and implement `line_with_issue`.
+    """
 
-    def __init__(self):
-        super().__init__()
-        self.heading = "Incorrect permissions:"
+    def issue_with_line(self, line, filepath):
+        raise NotImplementedError
+
+    def check_file_line(self, filepath, line, line_number):
+        if self.issue_with_line(line, filepath):
+            self.record_issue(filepath, line_number)
 
     def check_file_for_issue(self, filepath):
-        if not (os.access(filepath, os.X_OK) ==
-                filepath.endswith((".sh", ".pl", ".py"))):
+        with open(filepath, "rb") as f:
+            for i, line in enumerate(iter(f.readline, b"")):
+                self.check_file_line(filepath, line, i + 1)
+
+class PermissionIssueTracker(FileIssueTracker):
+    """Track files with bad permissions.
+
+    Files that are not executable scripts must not be executable."""
+
+    heading = "Incorrect permissions:"
+
+    def check_file_for_issue(self, filepath):
+        is_executable = os.access(filepath, os.X_OK)
+        should_be_executable = filepath.endswith((".sh", ".pl", ".py"))
+        if is_executable != should_be_executable:
             self.files_with_issues[filepath] = None
 
 
-class EndOfFileNewlineIssueTracker(IssueTracker):
+class EndOfFileNewlineIssueTracker(FileIssueTracker):
+    """Track files that end with an incomplete line
+    (no newline character at the end of the last line)."""
 
-    def __init__(self):
-        super().__init__()
-        self.heading = "Missing newline at end of file:"
+    heading = "Missing newline at end of file:"
 
     def check_file_for_issue(self, filepath):
         with open(filepath, "rb") as f:
@@ -89,11 +107,11 @@ class EndOfFileNewlineIssueTracker(IssueTracker):
                 self.files_with_issues[filepath] = None
 
 
-class Utf8BomIssueTracker(IssueTracker):
+class Utf8BomIssueTracker(FileIssueTracker):
+    """Track files that start with a UTF-8 BOM.
+    Files should be ASCII or UTF-8. Valid UTF-8 does not start with a BOM."""
 
-    def __init__(self):
-        super().__init__()
-        self.heading = "UTF-8 BOM present:"
+    heading = "UTF-8 BOM present:"
 
     def check_file_for_issue(self, filepath):
         with open(filepath, "rb") as f:
@@ -101,79 +119,63 @@ class Utf8BomIssueTracker(IssueTracker):
                 self.files_with_issues[filepath] = None
 
 
-class LineEndingIssueTracker(IssueTracker):
+class LineEndingIssueTracker(LineIssueTracker):
+    """Track files with non-Unix line endings (i.e. files with CR)."""
 
-    def __init__(self):
-        super().__init__()
-        self.heading = "Non Unix line endings:"
+    heading = "Non Unix line endings:"
 
-    def issue_with_line(self, line):
+    def issue_with_line(self, line, _filepath):
         return b"\r" in line
 
 
-class TrailingWhitespaceIssueTracker(IssueTracker):
+class TrailingWhitespaceIssueTracker(LineIssueTracker):
+    """Track lines with trailing whitespace."""
 
-    def __init__(self):
-        super().__init__()
-        self.heading = "Trailing whitespace:"
-        self.files_exemptions = [".md"]
+    heading = "Trailing whitespace:"
+    files_exemptions = frozenset(".md")
 
-    def issue_with_line(self, line):
+    def issue_with_line(self, line, _filepath):
         return line.rstrip(b"\r\n") != line.rstrip()
 
 
-class TabIssueTracker(IssueTracker):
+class TabIssueTracker(LineIssueTracker):
+    """Track lines with tabs."""
 
-    def __init__(self):
-        super().__init__()
-        self.heading = "Tabs present:"
-        self.files_exemptions = [
-            "Makefile", "generate_visualc_files.pl"
-        ]
+    heading = "Tabs present:"
+    files_exemptions = frozenset([
+        "Makefile",
+        "generate_visualc_files.pl",
+    ])
 
-    def issue_with_line(self, line):
+    def issue_with_line(self, line, _filepath):
         return b"\t" in line
 
 
-class MergeArtifactIssueTracker(IssueTracker):
+class MergeArtifactIssueTracker(LineIssueTracker):
+    """Track lines with merge artifacts.
+    These are leftovers from a ``git merge`` that wasn't fully edited."""
 
-    def __init__(self):
-        super().__init__()
-        self.heading = "Merge artifact:"
+    heading = "Merge artifact:"
 
-    def issue_with_line(self, filepath, line):
+    def issue_with_line(self, line, _filepath):
         # Detect leftover git conflict markers.
         if line.startswith(b'<<<<<<< ') or line.startswith(b'>>>>>>> '):
             return True
         if line.startswith(b'||||||| '): # from merge.conflictStyle=diff3
             return True
         if line.rstrip(b'\r\n') == b'=======' and \
-           not filepath.endswith('.md'):
+           not _filepath.endswith('.md'):
             return True
         return False
 
-    def check_file_line(self, filepath, line, line_number):
-        if self.issue_with_line(filepath, line):
-            self.record_issue(filepath, line_number)
-
-class TodoIssueTracker(IssueTracker):
-
-    def __init__(self):
-        super().__init__()
-        self.heading = "TODO present:"
-        self.files_exemptions = [
-            os.path.basename(__file__),
-            "benchmark.c",
-            "pull_request_template.md",
-        ]
-
-    def issue_with_line(self, line):
-        return b"todo" in line.lower()
-
 
 class IntegrityChecker(object):
+    """Sanity-check files under the current directory."""
 
     def __init__(self, log_file):
+        """Instantiate the sanity checker.
+        Check files under the current directory.
+        Write a report of issues to log_file."""
         self.check_repo_path()
         self.logger = None
         self.setup_logger(log_file)
@@ -194,10 +196,10 @@ class IntegrityChecker(object):
             TrailingWhitespaceIssueTracker(),
             TabIssueTracker(),
             MergeArtifactIssueTracker(),
-            TodoIssueTracker(),
         ]
 
-    def check_repo_path(self):
+    @staticmethod
+    def check_repo_path():
         if not all(os.path.isdir(d) for d in ["include", "library", "tests"]):
             raise Exception("Must be run from Mbed TLS root")
 
@@ -239,15 +241,7 @@ class IntegrityChecker(object):
 
 
 def run_main():
-    parser = argparse.ArgumentParser(
-        description=(
-            "This script checks the current state of the source code for "
-            "minor issues, including incorrect file permissions, "
-            "presence of tabs, non-Unix line endings, trailing whitespace, "
-            "presence of UTF-8 BOM, and TODO comments. "
-            "Note: requires python 3, must be run from Mbed TLS root."
-        )
-    )
+    parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "-l", "--log_file", type=str, help="path to optional output log",
     )
