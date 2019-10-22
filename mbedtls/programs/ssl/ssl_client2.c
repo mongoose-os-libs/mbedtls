@@ -116,7 +116,7 @@ int main( void )
 #define DFL_EXTENDED_MS         -1
 #define DFL_ETM                 -1
 
-#define GET_REQUEST "GET %s HTTP/1.0\r\nHost: %s\r\nExtra-header: "
+#define GET_REQUEST "GET %s HTTP/1.0\r\nExtra-header: "
 #define GET_REQUEST_END "\r\n\r\n"
 
 #if defined(MBEDTLS_X509_CRT_PARSE_C)
@@ -124,10 +124,8 @@ int main( void )
 #define USAGE_IO \
     "    ca_file=%%s          The single file containing the top-level CA(s) you fully trust\n" \
     "                        default: \"\" (pre-loaded)\n" \
-    "                        use \"none\" to skip loading any top-level CAs.\n" \
     "    ca_path=%%s          The path containing the top-level CA(s) you fully trust\n" \
     "                        default: \"\" (pre-loaded) (overrides ca_file)\n" \
-    "                        use \"none\" to skip loading any top-level CAs.\n" \
     "    crt_file=%%s         Your own cert and chain (in bottom to top order, top may be omitted)\n" \
     "                        default: \"\" (pre-loaded)\n" \
     "    key_file=%%s         default: \"\" (pre-loaded)\n"
@@ -323,6 +321,17 @@ int main( void )
 #define ALPN_LIST_SIZE  10
 #define CURVE_LIST_SIZE 20
 
+#if defined(MBEDTLS_CHECK_PARAMS)
+#include "mbedtls/platform_util.h"
+void mbedtls_param_failed( const char *failure_condition,
+                           const char *file,
+                           int line )
+{
+    mbedtls_printf( "%s:%i: Input param failed - %s\n",
+                    file, line, failure_condition );
+    mbedtls_exit( MBEDTLS_EXIT_FAILURE );
+}
+#endif
 
 /*
  * global options
@@ -1219,22 +1228,20 @@ int main( int argc, char *argv[] )
     mbedtls_printf( "  . Loading the CA root certificate ..." );
     fflush( stdout );
 
-    if( strcmp( opt.ca_path, "none" ) == 0 ||
-        strcmp( opt.ca_file, "none" ) == 0 )
-    {
-        ret = 0;
-    }
-    else
 #if defined(MBEDTLS_FS_IO)
     if( strlen( opt.ca_path ) )
-        ret = -1; //mbedtls_x509_crt_parse_path( &cacert, opt.ca_path );
+        if( strcmp( opt.ca_path, "none" ) == 0 )
+            ret = 0;
+        else
+            ret = 0; // mbedtls_x509_crt_parse_path( &cacert, opt.ca_path );
     else if( strlen( opt.ca_file ) )
-        ret = mbedtls_x509_crt_parse_file( &cacert, opt.ca_file );
+        if( strcmp( opt.ca_file, "none" ) == 0 )
+            ret = 0;
+        else
+            ret = mbedtls_x509_crt_parse_file( &cacert, opt.ca_file );
     else
 #endif
 #if defined(MBEDTLS_CERTS_C)
-    {
-#if defined(MBEDTLS_PEM_PARSE_C)
         for( i = 0; mbedtls_test_cas[i] != NULL; i++ )
         {
             ret = mbedtls_x509_crt_parse( &cacert,
@@ -1243,23 +1250,12 @@ int main( int argc, char *argv[] )
             if( ret != 0 )
                 break;
         }
-        if( ret == 0 )
-#endif /* MBEDTLS_PEM_PARSE_C */
-        for( i = 0; mbedtls_test_cas_der[i] != NULL; i++ )
-        {
-            ret = mbedtls_x509_crt_parse_der( &cacert,
-                         (const unsigned char *) mbedtls_test_cas_der[i],
-                         mbedtls_test_cas_der_len[i] );
-            if( ret != 0 )
-                break;
-        }
-    }
 #else
     {
         ret = 1;
         mbedtls_printf( "MBEDTLS_CERTS_C not defined." );
     }
-#endif /* MBEDTLS_CERTS_C */
+#endif
     if( ret < 0 )
     {
         mbedtls_printf( " failed\n  !  mbedtls_x509_crt_parse returned -0x%x\n\n",
@@ -1277,12 +1273,12 @@ int main( int argc, char *argv[] )
     mbedtls_printf( "  . Loading the client cert. and key..." );
     fflush( stdout );
 
-    if( strcmp( opt.crt_file, "none" ) == 0 )
-        ret = 0;
-    else
 #if defined(MBEDTLS_FS_IO)
     if( strlen( opt.crt_file ) )
-        ret = mbedtls_x509_crt_parse_file( &clicert, opt.crt_file );
+        if( strcmp( opt.crt_file, "none" ) == 0 )
+            ret = 0;
+        else
+            ret = mbedtls_x509_crt_parse_file( &clicert, opt.crt_file );
     else
 #endif
 #if defined(MBEDTLS_CERTS_C)
@@ -1292,7 +1288,7 @@ int main( int argc, char *argv[] )
 #else
     {
         ret = 1;
-        mbedtls_printf( "MBEDTLS_CERTS_C not defined." );
+        mbedtls_printf("MBEDTLS_CERTS_C not defined.");
     }
 #endif
     if( ret != 0 )
@@ -1302,12 +1298,12 @@ int main( int argc, char *argv[] )
         goto exit;
     }
 
-    if( strcmp( opt.key_file, "none" ) == 0 )
-        ret = 0;
-    else
 #if defined(MBEDTLS_FS_IO)
     if( strlen( opt.key_file ) )
-        ret = mbedtls_pk_parse_keyfile( &pkey, opt.key_file, "" );
+        if( strcmp( opt.key_file, "none" ) == 0 )
+            ret = 0;
+        else
+            ret = mbedtls_pk_parse_keyfile( &pkey, opt.key_file, "" );
     else
 #endif
 #if defined(MBEDTLS_CERTS_C)
@@ -1317,7 +1313,7 @@ int main( int argc, char *argv[] )
 #else
     {
         ret = 1;
-        mbedtls_printf( "MBEDTLS_CERTS_C not defined." );
+        mbedtls_printf("MBEDTLS_CERTS_C not defined.");
     }
 #endif
     if( ret != 0 )
@@ -1739,8 +1735,7 @@ send_request:
     fflush( stdout );
 
     len = mbedtls_snprintf( (char *) buf, sizeof( buf ) - 1, GET_REQUEST,
-                            opt.request_page,
-                            opt.server_addr );
+                            opt.request_page );
     tail_len = (int) strlen( GET_REQUEST_END );
 
     /* Add padding to GET request to reach opt.request_size in length */
@@ -1865,7 +1860,6 @@ send_request:
      */
     if( opt.transport == MBEDTLS_SSL_TRANSPORT_STREAM )
     {
-        size_t tot_len = 0;
         do
         {
             len = sizeof( buf ) - 1;
@@ -1916,9 +1910,7 @@ send_request:
 
             len = ret;
             buf[len] = '\0';
-            tot_len += len;
-            mbedtls_printf( " %d bytes read, total %ld\n\n%s",
-                len, (long) tot_len, (char *) buf );
+            mbedtls_printf( " %d bytes read\n\n%s", len, (char *) buf );
 
             /* End of message should be detected according to the syntax of the
              * application protocol (eg HTTP), just use a dummy test here. */

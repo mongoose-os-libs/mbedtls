@@ -19,7 +19,7 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\..\programs\random\gen_random_havege.c" />
+    <ClCompile Include="..\..\programs\test\ssl_cert_test.c" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="mbedTLS.vcxproj">
@@ -28,9 +28,9 @@
     </ProjectReference>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectGuid>{71257802-BBCA-99F5-E9D2-905738F30893}</ProjectGuid>
+    <ProjectGuid>{3FE0C0E1-D9BA-6A26-380C-F293E543B914}</ProjectGuid>
     <Keyword>Win32Proj</Keyword>
-    <RootNamespace>gen_random_havege</RootNamespace>
+    <RootNamespace>ssl_cert_test</RootNamespace>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">

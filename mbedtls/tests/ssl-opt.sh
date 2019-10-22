@@ -21,16 +21,12 @@
 
 set -u
 
-# Limit the size of each log to 10 GiB, in case of failures with this script
-# where it may output seemingly unlimited length error logs.
-ulimit -f 20971520
-
 if cd $( dirname $0 ); then :; else
     echo "cd $( dirname $0 ) failed" >&2
     exit 1
 fi
 
-# default values, can be overridden by the environment
+# default values, can be overriden by the environment
 : ${P_SRV:=../programs/ssl/ssl_server2}
 : ${P_CLI:=../programs/ssl/ssl_client2}
 : ${P_PXY:=../programs/test/udp_proxy}
@@ -420,9 +416,9 @@ has_mem_err() {
     fi
 }
 
-# Wait for process $2 named $3 to be listening on port $1. Print error to $4.
+# Wait for process $2 to be listening on port $1
 if type lsof >/dev/null 2>/dev/null; then
-    wait_app_start() {
+    wait_server_start() {
         START_TIME=$(date +%s)
         if [ "$DTLS" -eq 1 ]; then
             proto=UDP
@@ -432,8 +428,8 @@ if type lsof >/dev/null 2>/dev/null; then
         # Make a tight loop, server normally takes less than 1s to start.
         while ! lsof -a -n -b -i "$proto:$1" -p "$2" >/dev/null 2>/dev/null; do
               if [ $(( $(date +%s) - $START_TIME )) -gt $DOG_DELAY ]; then
-                  echo "$3 START TIMEOUT"
-                  echo "$3 START TIMEOUT" >> $4
+                  echo "SERVERSTART TIMEOUT"
+                  echo "SERVERSTART TIMEOUT" >> $SRV_OUT
                   break
               fi
               # Linux and *BSD support decimal arguments to sleep. On other
@@ -442,21 +438,11 @@ if type lsof >/dev/null 2>/dev/null; then
         done
     }
 else
-    echo "Warning: lsof not available, wait_app_start = sleep"
-    wait_app_start() {
+    echo "Warning: lsof not available, wait_server_start = sleep"
+    wait_server_start() {
         sleep "$START_DELAY"
     }
 fi
-
-# Wait for server process $2 to be listening on port $1.
-wait_server_start() {
-    wait_app_start $1 $2 "SERVER" $SRV_OUT
-}
-
-# Wait for proxy process $2 to be listening on port $1.
-wait_proxy_start() {
-    wait_app_start $1 $2 "PROXY" $PXY_OUT
-}
 
 # Given the client or server debug output, parse the unix timestamp that is
 # included in the first 4 bytes of the random bytes and check that it's within
@@ -567,20 +553,6 @@ run_test() {
     CLI_EXPECT="$3"
     shift 3
 
-    # Check if test uses files
-    TEST_USES_FILES=$(echo "$SRV_CMD $CLI_CMD" | grep "\.\(key\|crt\|pem\)" )
-    if [ ! -z "$TEST_USES_FILES" ]; then
-       requires_config_enabled MBEDTLS_FS_IO
-    fi
-
-    # should we skip?
-    if [ "X$SKIP_NEXT" = "XYES" ]; then
-        SKIP_NEXT="NO"
-        echo "SKIP"
-        SKIPS=$(( $SKIPS + 1 ))
-        return
-    fi
-
     # fix client port
     if [ -n "$PXY_CMD" ]; then
         CLI_CMD=$( echo "$CLI_CMD" | sed s/+SRV_PORT/$PXY_PORT/g )
@@ -610,7 +582,7 @@ run_test() {
             echo "$PXY_CMD" > $PXY_OUT
             $PXY_CMD >> $PXY_OUT 2>&1 &
             PXY_PID=$!
-            wait_proxy_start "$PXY_PORT" "$PXY_PID"
+            # assume proxy starts faster than server
         fi
 
         check_osrv_dtls
@@ -711,7 +683,7 @@ run_test() {
 
                 # The filtering in the following two options (-u and -U) do the following
                 #   - ignore valgrind output
-                #   - filter out everything but lines right after the pattern occurrences
+                #   - filter out everything but lines right after the pattern occurances
                 #   - keep one of each non-unique line
                 #   - count how many lines remain
                 # A line with '--' will remain in the result from previous outputs, so the number of lines in the result will be 1
@@ -2780,7 +2752,7 @@ run_test    "Authentication: server max_int chain, client default" \
                     key_file=data_files/dir-maxpath/09.key" \
             "$P_CLI server_name=CA09 ca_file=data_files/dir-maxpath/00.crt" \
             0 \
-            -C "X509 - A fatal error occurred"
+            -C "X509 - A fatal error occured"
 
 requires_full_size_output_buffer
 run_test    "Authentication: server max_int+1 chain, client default" \
@@ -2788,7 +2760,7 @@ run_test    "Authentication: server max_int+1 chain, client default" \
                     key_file=data_files/dir-maxpath/10.key" \
             "$P_CLI server_name=CA10 ca_file=data_files/dir-maxpath/00.crt" \
             1 \
-            -c "X509 - A fatal error occurred"
+            -c "X509 - A fatal error occured"
 
 requires_full_size_output_buffer
 run_test    "Authentication: server max_int+1 chain, client optional" \
@@ -2797,7 +2769,7 @@ run_test    "Authentication: server max_int+1 chain, client optional" \
             "$P_CLI server_name=CA10 ca_file=data_files/dir-maxpath/00.crt \
                     auth_mode=optional" \
             1 \
-            -c "X509 - A fatal error occurred"
+            -c "X509 - A fatal error occured"
 
 requires_full_size_output_buffer
 run_test    "Authentication: server max_int+1 chain, client none" \
@@ -2806,7 +2778,7 @@ run_test    "Authentication: server max_int+1 chain, client none" \
             "$P_CLI server_name=CA10 ca_file=data_files/dir-maxpath/00.crt \
                     auth_mode=none" \
             0 \
-            -C "X509 - A fatal error occurred"
+            -C "X509 - A fatal error occured"
 
 requires_full_size_output_buffer
 run_test    "Authentication: client max_int+1 chain, server default" \
@@ -2814,7 +2786,7 @@ run_test    "Authentication: client max_int+1 chain, server default" \
             "$P_CLI crt_file=data_files/dir-maxpath/c10.pem \
                     key_file=data_files/dir-maxpath/10.key" \
             0 \
-            -S "X509 - A fatal error occurred"
+            -S "X509 - A fatal error occured"
 
 requires_full_size_output_buffer
 run_test    "Authentication: client max_int+1 chain, server optional" \
@@ -2822,7 +2794,7 @@ run_test    "Authentication: client max_int+1 chain, server optional" \
             "$P_CLI crt_file=data_files/dir-maxpath/c10.pem \
                     key_file=data_files/dir-maxpath/10.key" \
             1 \
-            -s "X509 - A fatal error occurred"
+            -s "X509 - A fatal error occured"
 
 requires_full_size_output_buffer
 run_test    "Authentication: client max_int+1 chain, server required" \
@@ -2830,7 +2802,7 @@ run_test    "Authentication: client max_int+1 chain, server required" \
             "$P_CLI crt_file=data_files/dir-maxpath/c10.pem \
                     key_file=data_files/dir-maxpath/10.key" \
             1 \
-            -s "X509 - A fatal error occurred"
+            -s "X509 - A fatal error occured"
 
 requires_full_size_output_buffer
 run_test    "Authentication: client max_int chain, server required" \
@@ -2838,7 +2810,7 @@ run_test    "Authentication: client max_int chain, server required" \
             "$P_CLI crt_file=data_files/dir-maxpath/c09.pem \
                     key_file=data_files/dir-maxpath/09.key" \
             0 \
-            -S "X509 - A fatal error occurred"
+            -S "X509 - A fatal error occured"
 
 # Tests for CA list in CertificateRequest messages
 
@@ -4021,37 +3993,26 @@ run_test    "ECJPAKE: working, DTLS, nolog" \
 # Tests for ciphersuites per version
 
 requires_config_enabled MBEDTLS_SSL_PROTO_SSL3
-requires_config_enabled MBEDTLS_CAMELLIA_C
-requires_config_enabled MBEDTLS_AES_C
 run_test    "Per-version suites: SSL3" \
-            "$P_SRV min_version=ssl3 version_suites=TLS-RSA-WITH-CAMELLIA-128-CBC-SHA,TLS-RSA-WITH-AES-256-CBC-SHA,TLS-RSA-WITH-AES-128-CBC-SHA,TLS-RSA-WITH-AES-128-GCM-SHA256" \
+            "$P_SRV min_version=ssl3 version_suites=TLS-RSA-WITH-3DES-EDE-CBC-SHA,TLS-RSA-WITH-AES-256-CBC-SHA,TLS-RSA-WITH-AES-128-CBC-SHA,TLS-RSA-WITH-AES-128-GCM-SHA256" \
             "$P_CLI force_version=ssl3" \
             0 \
-            -c "Ciphersuite is TLS-RSA-WITH-CAMELLIA-128-CBC-SHA"
+            -c "Ciphersuite is TLS-RSA-WITH-3DES-EDE-CBC-SHA"
 
-requires_config_enabled MBEDTLS_SSL_PROTO_TLS1
-requires_config_enabled MBEDTLS_CAMELLIA_C
-requires_config_enabled MBEDTLS_AES_C
 run_test    "Per-version suites: TLS 1.0" \
-            "$P_SRV version_suites=TLS-RSA-WITH-CAMELLIA-128-CBC-SHA,TLS-RSA-WITH-AES-256-CBC-SHA,TLS-RSA-WITH-AES-128-CBC-SHA,TLS-RSA-WITH-AES-128-GCM-SHA256" \
+            "$P_SRV arc4=1 version_suites=TLS-RSA-WITH-3DES-EDE-CBC-SHA,TLS-RSA-WITH-AES-256-CBC-SHA,TLS-RSA-WITH-AES-128-CBC-SHA,TLS-RSA-WITH-AES-128-GCM-SHA256" \
             "$P_CLI force_version=tls1 arc4=1" \
             0 \
             -c "Ciphersuite is TLS-RSA-WITH-AES-256-CBC-SHA"
 
-requires_config_enabled MBEDTLS_SSL_PROTO_TLS1_1
-requires_config_enabled MBEDTLS_CAMELLIA_C
-requires_config_enabled MBEDTLS_AES_C
 run_test    "Per-version suites: TLS 1.1" \
-            "$P_SRV version_suites=TLS-RSA-WITH-CAMELLIA-128-CBC-SHA,TLS-RSA-WITH-AES-256-CBC-SHA,TLS-RSA-WITH-AES-128-CBC-SHA,TLS-RSA-WITH-AES-128-GCM-SHA256" \
+            "$P_SRV version_suites=TLS-RSA-WITH-3DES-EDE-CBC-SHA,TLS-RSA-WITH-AES-256-CBC-SHA,TLS-RSA-WITH-AES-128-CBC-SHA,TLS-RSA-WITH-AES-128-GCM-SHA256" \
             "$P_CLI force_version=tls1_1" \
             0 \
             -c "Ciphersuite is TLS-RSA-WITH-AES-128-CBC-SHA"
 
-requires_config_enabled MBEDTLS_SSL_PROTO_TLS1_2
-requires_config_enabled MBEDTLS_CAMELLIA_C
-requires_config_enabled MBEDTLS_AES_C
 run_test    "Per-version suites: TLS 1.2" \
-            "$P_SRV version_suites=TLS-RSA-WITH-CAMELLIA-128-CBC-SHA,TLS-RSA-WITH-AES-256-CBC-SHA,TLS-RSA-WITH-AES-128-CBC-SHA,TLS-RSA-WITH-AES-128-GCM-SHA256" \
+            "$P_SRV version_suites=TLS-RSA-WITH-3DES-EDE-CBC-SHA,TLS-RSA-WITH-AES-256-CBC-SHA,TLS-RSA-WITH-AES-128-CBC-SHA,TLS-RSA-WITH-AES-128-GCM-SHA256" \
             "$P_CLI force_version=tls1_2" \
             0 \
             -c "Ciphersuite is TLS-RSA-WITH-AES-128-GCM-SHA256"
@@ -4060,7 +4021,7 @@ run_test    "Per-version suites: TLS 1.2" \
 
 requires_gnutls
 run_test    "ClientHello without extensions, SHA-1 allowed" \
-            "$P_SRV debug_level=3 key_file=data_files/server2.key crt_file=data_files/server2.crt" \
+            "$P_SRV debug_level=3" \
             "$G_CLI --priority=NORMAL:%NO_EXTENSIONS:%DISABLE_SAFE_RENEGOTIATION localhost" \
             0 \
             -s "dumping 'client hello extensions' (0 bytes)"
@@ -6752,7 +6713,13 @@ run_test    "DTLS fragmenting: 3d, gnutls server, DTLS 1.0" \
             -c "fragmenting handshake message" \
             -C "error"
 
-requires_gnutls_next
+## The two tests below are disabled due to a bug in GnuTLS client that causes
+## handshake failures when the NewSessionTicket message is lost, see
+## https://gitlab.com/gnutls/gnutls/issues/543
+## We can re-enable them when a fixed version fo GnuTLS is available
+## and installed in our CI system.
+skip_next_test
+requires_gnutls
 requires_config_enabled MBEDTLS_SSL_PROTO_DTLS
 requires_config_enabled MBEDTLS_RSA_C
 requires_config_enabled MBEDTLS_ECDSA_C
@@ -6764,11 +6731,12 @@ run_test    "DTLS fragmenting: 3d, gnutls client, DTLS 1.2" \
              crt_file=data_files/server7_int-ca.crt \
              key_file=data_files/server7.key \
              hs_timeout=250-60000 mtu=512 force_version=dtls1_2" \
-           "$G_NEXT_CLI -u --insecure 127.0.0.1" \
+           "$G_CLI -u --insecure 127.0.0.1" \
             0 \
             -s "fragmenting handshake message"
 
-requires_gnutls_next
+skip_next_test
+requires_gnutls
 requires_config_enabled MBEDTLS_SSL_PROTO_DTLS
 requires_config_enabled MBEDTLS_RSA_C
 requires_config_enabled MBEDTLS_ECDSA_C
@@ -6780,7 +6748,7 @@ run_test    "DTLS fragmenting: 3d, gnutls client, DTLS 1.0" \
              crt_file=data_files/server7_int-ca.crt \
              key_file=data_files/server7.key \
              hs_timeout=250-60000 mtu=512 force_version=dtls1" \
-           "$G_NEXT_CLI -u --insecure 127.0.0.1" \
+           "$G_CLI -u --insecure 127.0.0.1" \
             0 \
             -s "fragmenting handshake message"
 
@@ -7350,23 +7318,29 @@ run_test    "DTLS proxy: 3d, gnutls server" \
             -s "Extra-header:" \
             -c "Extra-header:"
 
-requires_gnutls_next
+# The next two test are disabled because they tend to trigger a bug in the
+# version of GnuTLS that's currently installed on our CI. The bug occurs when
+# different fragments of the same handshake message are received out-of-order
+# by GnuTLS and results in a timeout. It's been fixed in GnuTLS 3.5.2.
+skip_next_test
+requires_gnutls
 client_needs_more_time 8
 not_with_valgrind # risk of non-mbedtls peer timing out
 run_test    "DTLS proxy: 3d, gnutls server, fragmentation" \
             -p "$P_PXY drop=5 delay=5 duplicate=5" \
-            "$G_NEXT_SRV -u --mtu 512" \
+            "$G_SRV -u --mtu 512" \
             "$P_CLI dgram_packing=0 dtls=1 hs_timeout=500-60000" \
             0 \
             -s "Extra-header:" \
             -c "Extra-header:"
 
-requires_gnutls_next
+skip_next_test
+requires_gnutls
 client_needs_more_time 8
 not_with_valgrind # risk of non-mbedtls peer timing out
 run_test    "DTLS proxy: 3d, gnutls server, fragmentation, nbio" \
             -p "$P_PXY drop=5 delay=5 duplicate=5" \
-            "$G_NEXT_SRV -u --mtu 512" \
+            "$G_SRV -u --mtu 512" \
             "$P_CLI dgram_packing=0 dtls=1 hs_timeout=500-60000 nbio=2" \
             0 \
             -s "Extra-header:" \

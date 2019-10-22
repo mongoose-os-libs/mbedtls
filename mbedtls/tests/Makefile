@@ -3,7 +3,7 @@
 # To compile with PKCS11: add "-lpkcs11-helper" to LDFLAGS
 
 CFLAGS	?= -O2
-WARNING_CFLAGS ?= -Wall -W -Wdeclaration-after-statement -Wunused
+WARNING_CFLAGS ?= -Wall -W -Wdeclaration-after-statement -Wno-unused-function -Wno-unused-value
 LDFLAGS ?=
 
 LOCAL_CFLAGS = -MD $(WARNING_CFLAGS) -I../include -D_FILE_OFFSET_BITS=64 -I.
@@ -120,9 +120,8 @@ ifneq ($(wildcard TESTS/.*),)
 endif
 endif
 
-# Test suites caught by SKIP_TEST_SUITES are built but not executed.
 check: $(BINARIES)
-	perl scripts/run-test-suites.pl --skip=$(SKIP_TEST_SUITES)
+	perl scripts/run-test-suites.pl
 
 test: check
 
