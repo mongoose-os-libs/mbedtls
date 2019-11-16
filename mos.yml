@@ -1,7 +1,7 @@
 author: mongoose-os
 description: Implements SPI API on Mongoose OS
 type: lib
-version: 2.16.3-cesanta2
+version: 2.16.3-cesanta3
 
 sources:
   - src
@@ -36,6 +36,7 @@ conds:
       cdefs:
         MG_ENABLE_SSL: 1
         MG_SSL_IF: MG_SSL_IF_MBEDTLS
+        MBEDTLS_AES_ATCA: 1
         MBEDTLS_ECP_ATCA: 1
       libs:
         - origin: https://github.com/mongoose-os-libs/atca

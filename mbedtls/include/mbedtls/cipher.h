@@ -176,6 +176,9 @@ typedef enum {
     MBEDTLS_CIPHER_AES_256_XTS,          /**< AES 256-bit cipher in XTS block mode. */
     MBEDTLS_CIPHER_CHACHA20,             /**< ChaCha20 stream cipher. */
     MBEDTLS_CIPHER_CHACHA20_POLY1305,    /**< ChaCha20-Poly1305 AEAD cipher. */
+#if defined(MBEDTLS_AES_ATCA)
+    MBEDTLS_CIPHER_AES_128_ECB_ATCA,     /**< AES cipher with 128-bit ECB mode, executed on the ATECC608A. */
+#endif
 } mbedtls_cipher_type_t;
 
 /** Supported cipher modes. */

@@ -125,7 +125,6 @@ typedef struct mbedtls_ecdh_context
     mbedtls_ecp_restart_ctx rs; /*!< The restart context for EC computations. */
 #endif /* MBEDTLS_ECP_RESTARTABLE */
 #if defined(MBEDTLS_ECP_ATCA)
-    uint8_t use_atca;
     uint8_t atca_slot;
 #endif
 #else
