@@ -330,8 +330,12 @@ int mbedtls_ecdh_read_params( mbedtls_ecdh_context *ctx,
  *
  */
 int mbedtls_ecdh_get_params( mbedtls_ecdh_context *ctx,
-                             mbedtls_pk_context *pk,
+                             const mbedtls_ecp_keypair *key,
                              mbedtls_ecdh_side side );
+
+int mbedtls_ecdh_get_params_pk( mbedtls_ecdh_context *ctx,
+                                const mbedtls_pk_context *pk,
+                                mbedtls_ecdh_side side );
 
 /**
  * \brief           This function generates a public key and exports it
