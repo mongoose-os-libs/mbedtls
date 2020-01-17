@@ -1,7 +1,7 @@
 author: mongoose-os
 description: Implements SPI API on Mongoose OS
 type: lib
-version: 2.16.3-cesanta7
+version: 2.16.3-cesanta8
 
 sources:
   - src
