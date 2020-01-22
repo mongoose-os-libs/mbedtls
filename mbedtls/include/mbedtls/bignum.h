@@ -84,6 +84,14 @@
 
 #define MBEDTLS_MPI_MAX_BITS                              ( 8 * MBEDTLS_MPI_MAX_SIZE )    /**< Maximum number of bits for usable MPIs. */
 
+#ifndef MBEDTLS_MPI_INLINE_BITS
+#define MBEDTLS_MPI_INLINE_BITS 256
+#endif
+#if MBEDTLS_MPI_INLINE_BITS % 64 != 0
+#error Invalid MBEDTLS_MPI_INLINE_BITS
+#endif
+#define MBEDTLS_MPI_INLINE_LIMBS (MBEDTLS_MPI_INLINE_BITS / 8 / (sizeof(mbedtls_mpi_uint)))
+
 /*
  * When reading from files with mbedtls_mpi_read_file() and writing to files with
  * mbedtls_mpi_write_file() the buffer should have space
@@ -184,11 +192,29 @@ extern "C" {
  */
 typedef struct mbedtls_mpi
 {
-    int s;              /*!<  integer sign      */
-    size_t n;           /*!<  total # of limbs  */
-    mbedtls_mpi_uint *p;          /*!<  pointer to limbs  */
+    int8_t s;                  /*!<  integer sign      */
+    uint8_t inline_buf_size;   /*!<  size of the inline buffer. */
+    uint16_t n;                /*!<  total # of limbs  */
+    mbedtls_mpi_uint *p;       /*!<  pointer to limbs. either points to buf if the number is inlined or to a heap-allocated region.  */
+    mbedtls_mpi_uint inline_buf[0];   /*!<  inline buffer, if any. extends for inline_buf_size limbs past the end of the struct. must be at the end. */
 }
 mbedtls_mpi;
+
+/* mbedtls_mpi with MBEDTLS_MPI_INLINE_LIMBS inline limbs. */
+typedef struct mbedtls_mpi_inline
+{
+    mbedtls_mpi N;
+    mbedtls_mpi_uint inline_buf[MBEDTLS_MPI_INLINE_LIMBS];
+}
+mbedtls_mpi_inline;
+
+/* MPI with twice as many inline limbs. Used to store multiplication results. */
+typedef struct mbedtls_mpi_inline2
+{
+    mbedtls_mpi N;
+    mbedtls_mpi_uint inline_buf[MBEDTLS_MPI_INLINE_LIMBS * 2];
+}
+mbedtls_mpi_inline2;
 
 /**
  * \brief           Initialize an MPI context.
@@ -199,6 +225,16 @@ mbedtls_mpi;
  * \param X         The MPI context to initialize. This must not be \c NULL.
  */
 void mbedtls_mpi_init( mbedtls_mpi *X );
+inline static void mbedtls_mpi_init_inline( mbedtls_mpi_inline *X )
+{
+    mbedtls_mpi_init(&X->N);
+    X->N.inline_buf_size = MBEDTLS_MPI_INLINE_LIMBS;
+}
+inline static void mbedtls_mpi_init_inline2( mbedtls_mpi_inline2 *X )
+{
+    mbedtls_mpi_init(&X->N);
+    X->N.inline_buf_size = MBEDTLS_MPI_INLINE_LIMBS * 2;
+}
 
 /**
  * \brief          This function frees the components of an MPI context.
@@ -255,6 +291,11 @@ int mbedtls_mpi_shrink( mbedtls_mpi *X, size_t nblimbs );
  * \return         Another negative error code on other kinds of failure.
  */
 int mbedtls_mpi_copy( mbedtls_mpi *X, const mbedtls_mpi *Y );
+inline static int mbedtls_mpi_copy_inline( mbedtls_mpi_inline *X, const mbedtls_mpi *Y )
+{
+    X->N.inline_buf_size = MBEDTLS_MPI_INLINE_LIMBS;
+    return mbedtls_mpi_copy(&X->N, Y);
+}
 
 /**
  * \brief          Swap the contents of two MPIs.

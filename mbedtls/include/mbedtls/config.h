@@ -3040,6 +3040,15 @@
 /* MPI / BIGNUM options */
 //#define MBEDTLS_MPI_WINDOW_SIZE            6 /**< Maximum windows size used. */
 //#define MBEDTLS_MPI_MAX_SIZE            1024 /**< Maximum number of bytes for usable MPIs. */
+#define MBEDTLS_MPI_INLINE_BITS            256 /* Up to 256-bit MPI operations will be much faster (good for ECP) with modest increase in memoory usage. */
+// Tock uptime: 27.54, RAM: 51536, 37612 free 23160 min fre
+//
+// Tock uptime: 11.32, RAM: 51520, 38180 free 23544 min free 25 0 sz 4 8 40 - 2.5s
+// Tick uptime: 37.00, RAM: 51536, 37704 free 24120 min free sz 4 8 40
+//
+// Tock uptime: 18.50, RAM: 51536, 38468 free 13584 min free - 7 sec
+// Tick uptime: 8.23, RAM: 51520, 38960 free 12152 min free 0 0 sz 4 8 40 - 2.5s
+// Tock uptime: 19.14, RAM: 51536, 39236 free 12912 min free sz 4 8 40
 
 /* CTR_DRBG options */
 //#define MBEDTLS_CTR_DRBG_ENTROPY_LEN               48 /**< Amount of entropy used per seed by default (48 with SHA-512, 32 with SHA-256) */

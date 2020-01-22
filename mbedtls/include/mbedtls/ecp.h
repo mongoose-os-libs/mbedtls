@@ -134,9 +134,18 @@ typedef struct mbedtls_ecp_curve_info
  */
 typedef struct mbedtls_ecp_point
 {
-    mbedtls_mpi X;          /*!< The X coordinate of the ECP point. */
-    mbedtls_mpi Y;          /*!< The Y coordinate of the ECP point. */
-    mbedtls_mpi Z;          /*!< The Z coordinate of the ECP point. */
+    union {
+      mbedtls_mpi X;          /*!< The X coordinate of the ECP point. */
+      mbedtls_mpi_inline Xi;
+    };
+    union {
+      mbedtls_mpi Y;          /*!< The Y coordinate of the ECP point. */
+      mbedtls_mpi_inline Yi;
+    };
+    union {
+      mbedtls_mpi Z;          /*!< The Z coordinate of the ECP point. */
+      mbedtls_mpi_inline Zi;
+    };
 }
 mbedtls_ecp_point;
 
