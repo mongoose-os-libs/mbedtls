@@ -16,4 +16,7 @@
 #define MBEDTLS_AES_ENCRYPT_ALT
 #define MBEDTLS_AES_DECRYPT_ALT
 
+#define MBEDTLS_MD5_ALT
+#define MBEDTLS_SHA1_ALT
+
 /* no_extern_c_check */
