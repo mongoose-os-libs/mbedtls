@@ -29,9 +29,8 @@ config_schema:
   - ["debug.mbedtls_level", "i", 1, {title: "mbedTLS debug level"}]
 
 build_vars:
-  # Override to 0 to disable ATECCx08 support.
-  # Since library is binary, you also need to specify variant: noatca.
-  MGOS_MBEDTLS_ENABLE_ATCA: 1
+  # Set to 1 to enable ATECCx08 support.
+  MGOS_MBEDTLS_ENABLE_ATCA: 0
 
 conds:
   # On CC3200 we use SimpleLink for SSL due to lack of space.
