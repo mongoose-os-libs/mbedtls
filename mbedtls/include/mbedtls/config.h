@@ -371,9 +371,6 @@
  *
  */
 //#define MBEDTLS_AES_ALT
-/* When using software implementation, keep tables in flash.
- * Saves about 8K of RAM. */
-#define MBEDTLS_AES_ROM_TABLES
 //#define MBEDTLS_ARC4_ALT
 //#define MBEDTLS_ARIA_ALT
 //#define MBEDTLS_BLOWFISH_ALT
@@ -575,7 +572,7 @@
  * This option is independent of \c MBEDTLS_AES_FEWER_TABLES.
  *
  */
-//#define MBEDTLS_AES_ROM_TABLES
+#define MBEDTLS_AES_ROM_TABLES
 
 /**
  * \def MBEDTLS_AES_FEWER_TABLES
@@ -597,7 +594,7 @@
  * This option is independent of \c MBEDTLS_AES_ROM_TABLES.
  *
  */
-//#define MBEDTLS_AES_FEWER_TABLES
+#define MBEDTLS_AES_FEWER_TABLES
 
 /**
  * \def MBEDTLS_CAMELLIA_SMALL_MEMORY
