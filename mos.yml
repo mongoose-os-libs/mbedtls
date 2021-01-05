@@ -1,17 +1,22 @@
 author: mongoose-os
-description: Implements SPI API on Mongoose OS
+description: Mongoose OS port of mbedTLS
 type: lib
 version: 2.16.6-cesanta1
+
+modules:
+  - location: https://github.com/mongoose-os/mbedtls
+    version: 2.16.6-cesanta1
+    name: mbedtls_module
 
 sources:
   - src
   - src/${platform}
-  - mbedtls/library
+  - ${mos.modules.mbedtls_module.path}/library
 
 includes:
   - include
   - include/${platform}
-  - mbedtls/include
+  - ${mos.modules.mbedtls_module.path}/include
 
 cdefs:
   MBEDTLS_USER_CONFIG_FILE: '\"mbedtls_platform_config.h\"'
@@ -62,7 +67,7 @@ conds:
   - when: build_vars.MGOS_MBEDTLS_ENABLE_ATCA == "1"
     apply:
       libs:
-        - origin: https://github.com/mongoose-os-libs/atca
+        - location: https://github.com/mongoose-os-libs/atca
       cdefs:
         MBEDTLS_AES_ATCA: 1
         MBEDTLS_ECP_ATCA: 1
