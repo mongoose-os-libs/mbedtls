@@ -219,29 +219,6 @@ int mbedtls_internal_sha256_process(mbedtls_sha256_context *ctx,
     __attribute__((alias("cc32xx_hash_internal_process")));
 #endif /* MBEDTLS_SHA256_ALT */
 
-/* Mongoose external hash interface. */
-void mg_hash_md5_v(uint32_t num_msgs, const uint8_t *msgs[],
-                   const uint32_t *msg_lens, uint8_t *digest) {
-  struct cc32xx_hash_ctx ctx;
-  cc32xx_hash_init(&ctx);
-  cc32xx_hash_start(&ctx, CC32XX_HASH_ALGO_MD5);
-  for (int i = 0; i < num_msgs; i++) {
-    cc32xx_hash_update(&ctx, msgs[i], msg_lens[i]);
-  }
-  cc32xx_hash_finish(&ctx, digest);
-}
-
-void mg_hash_sha1_v(uint32_t num_msgs, const uint8_t *msgs[],
-                    const uint32_t *msg_lens, uint8_t *digest) {
-  struct cc32xx_hash_ctx ctx;
-  cc32xx_hash_init(&ctx);
-  cc32xx_hash_start(&ctx, CC32XX_HASH_ALGO_SHA1);
-  for (int i = 0; i < num_msgs; i++) {
-    cc32xx_hash_update(&ctx, msgs[i], msg_lens[i]);
-  }
-  cc32xx_hash_finish(&ctx, digest);
-}
-
 void cc32xx_hash_module_init(void) {
   s_engine_lock = mgos_rlock_create();
 }

@@ -29,6 +29,10 @@ cdefs:
   # but we don't care: Mongoose frees them immediately anyway
   # (`MG_SSL_IF_MBEDTLS_FREE_CERTS` is set).
   MBEDTLS_FREE_CERT_CHAIN: 1
+  # Provide crypto functions for Mongoose
+  MG_EXT_MD5: 1
+  MG_EXT_SHA1: 1
+  MG_EXT_SHA256: 1
 
 config_schema:
   - ["debug.mbedtls_level", "i", 1, {title: "mbedTLS debug level"}]
