@@ -1,11 +1,11 @@
 author: mongoose-os
 description: Mongoose OS port of mbedTLS
 type: lib
-version: 2.16.6-cesanta2
+version: 2.16.11-cesanta1
 
 modules:
   - location: https://github.com/mongoose-os/mbedtls
-    version: 2.16.6-cesanta2
+    version: 2.16.11-cesanta1
     name: mbedtls_module
 
 sources:
