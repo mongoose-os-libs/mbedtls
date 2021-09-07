@@ -7,6 +7,7 @@
 
 #include "mongoose.h"
 
+#include "mbedtls/entropy_poll.h"
 #include "mbedtls/md5.h"
 #include "mbedtls/sha1.h"
 #include "mbedtls/sha256.h"
@@ -49,6 +50,18 @@ void mg_hash_sha256_v(size_t num_msgs, const uint8_t *msgs[],
   }
   mbedtls_sha256_finish_ret(&ctx, digest);
   mbedtls_sha256_free(&ctx);
+}
+
+/* This function is provided by platforms */
+extern int mg_ssl_if_mbed_random(void *ctx, unsigned char *buf, size_t len);
+
+/* This feeds the entropy pool (mbedtls_entropy_*). */
+int mbedtls_hardware_poll(void *data, unsigned char *output, size_t len,
+                          size_t *olen) {
+  mg_ssl_if_mbed_random(NULL, output, len);
+  *olen = len;
+  (void) data;
+  return 0;
 }
 
 bool mgos_mbedtls_init(void) {
