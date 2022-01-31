@@ -1,7 +1,7 @@
 author: mongoose-os
 description: Mongoose OS port of mbedTLS
 type: lib
-version: 2.16.11-cesanta1
+version: 2.16.11-cesanta1.1
 
 modules:
   - location: https://github.com/mongoose-os/mbedtls
@@ -48,12 +48,8 @@ conds:
     apply:
       cdefs:
         MG_ENABLE_SSL: 1
-        MG_SSL_IF: MG_SSL_IF_MBEDTLS
-
-  - when: mos.platform == "cc3200"
-    apply:
-      build_vars:
-        MGOS_MBEDTLS_ENABLE_ATCA: 0
+        MG_SSL_IF_MBEDTLS_MGOS: 100
+        MG_SSL_IF: MG_SSL_IF_MBEDTLS_MGOS
 
   - when: mos.platform == "cc3200"
     apply:
@@ -61,6 +57,9 @@ conds:
         - src/cc32xx
       includes:
         - include/cc32xx
+      build_vars:
+        MGOS_MBEDTLS_ENABLE_ATCA: 0
+
   - when: mos.platform == "cc3220"
     apply:
       sources:
