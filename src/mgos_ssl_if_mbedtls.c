@@ -15,12 +15,12 @@
  * limitations under the License.
  */
 
-#if MG_ENABLE_SSL && MG_SSL_IF == MG_SSL_IF_MBEDTLS_MGOS
-
 #include <assert.h>
 
 #include "mgos.h"
 #include "mgos_mongoose.h"
+
+#if MG_ENABLE_SSL && MG_SSL_IF == MG_SSL_IF_MBEDTLS_MGOS
 
 #include "mbedtls/debug.h"
 #include "mbedtls/ecp.h"
