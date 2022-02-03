@@ -40,8 +40,9 @@
     if (_ptr) *(_ptr) = _v;     \
   } while (0)
 
-static void mg_ssl_mbed_log(void *ctx, int level, const char *file UNUSED_ARG,
-                            int line UNUSED_ARG, const char *str) {
+static void mgos_ssl_if_mbed_log(void *ctx, int level,
+                                 const char *file UNUSED_ARG,
+                                 int line UNUSED_ARG, const char *str) {
   enum cs_log_level cs_level;
   switch (level) {
     case 1:
@@ -65,11 +66,13 @@ static void mg_ssl_mbed_log(void *ctx, int level, const char *file UNUSED_ARG,
 
 enum mgos_ssl_if_mbed_hs_state {
   MGOS_SSL_IF_MBED_HS_STATE_IDLE = 0,
-  MGOS_SSL_IF_MBED_HS_STATE_PENDING = 1,
+  MGOS_SSL_IF_MBED_HS_STATE_WORKING = 1,
   MGOS_SSL_IF_MBED_HS_STATE_DONE = 2,
 };
 
-struct mg_ssl_if_ctx {
+struct mgos_ssl_if_mbed_hs_ctx;
+
+struct mgos_ssl_if_mbed_ctx {
   mbedtls_ssl_config *conf;
   mbedtls_ssl_context *ssl;
   mbedtls_x509_crt *cert;
@@ -82,9 +85,26 @@ struct mg_ssl_if_ctx {
   struct mbuf cipher_suites;
   size_t saved_len;
 
+  // State shared between the main and handshake task.
+  // Main task can only touch it while hs_state is IDLE or DONE,
+  // and conversely the background task can only touch it while WORKING.
+  // Since connection can be closed while the callback is WORKING and we can't
+  // ask the manager wait for it to complete, we "orphan" the state and let the
+  // background callback dispose of it when it gets to run.
   enum mgos_ssl_if_mbed_hs_state hs_state;
-  int hs_result;
+  struct mgos_ssl_if_mbed_hs_ctx *hs_ctx;
+  struct mbuf hs_send_mbuf;  // Buffers used by send_hs, recv_hs.
   struct mbuf hs_recv_mbuf;
+  int hs_result;
+};
+
+// Handshake context carries is a piece of state passed to the background task
+// for single run of the handshake.
+struct mgos_ssl_if_mbed_hs_ctx {
+  struct mg_connection *nc;
+  struct mgos_ssl_if_mbed_ctx *ctx;
+  // When orphaned, nc is no longer valid and we are responsible for freeing ctx
+  bool orphaned;
 };
 
 /* Must be provided by the platform. ctx is struct mg_connection. */
@@ -92,21 +112,23 @@ extern int mg_ssl_if_mbed_random(void *ctx, unsigned char *buf, size_t len);
 
 static int mgos_ssl_if_mbed_send_hs(void *arg, const unsigned char *buf,
                                     size_t len) {
-  struct mg_connection *nc = arg;
-  assert(!(nc->flags & MG_F_SSL_HANDSHAKE_DONE));
-  mbuf_append(&nc->send_mbuf, buf, len);
-  DBG(("%p SSL HS -> %u", nc, (unsigned) len));
+  struct mgos_ssl_if_mbed_hs_ctx *hs_ctx = arg;
+  struct mgos_ssl_if_mbed_ctx *ctx = hs_ctx->ctx;
+  if (hs_ctx->orphaned) return MBEDTLS_ERR_NET_SEND_FAILED;
+  mbuf_append(&ctx->hs_send_mbuf, buf, len);
+  DBG(("%p SSL HS -> %u tot %u", hs_ctx->nc, (unsigned) len,
+       (unsigned) ctx->hs_send_mbuf.len));
   return len;
 }
 
 static int mgos_ssl_if_mbed_recv_hs(void *arg, unsigned char *buf, size_t len) {
-  struct mg_connection *nc = arg;
-  assert(!(nc->flags & MG_F_SSL_HANDSHAKE_DONE));
-  struct mg_ssl_if_ctx *ctx = nc->ssl_if_data;
+  struct mgos_ssl_if_mbed_hs_ctx *hs_ctx = arg;
+  if (hs_ctx->orphaned) return MBEDTLS_ERR_NET_RECV_FAILED;
+  struct mgos_ssl_if_mbed_ctx *ctx = hs_ctx->ctx;
   size_t n = ctx->hs_recv_mbuf.len;
   if (n == 0) return MBEDTLS_ERR_SSL_WANT_READ;
   if (n > len) n = len;
-  DBG(("%p SSL HS <- %u", nc, (unsigned) n));
+  DBG(("%p SSL HS <- %u", hs_ctx->nc, (unsigned) n));
   memcpy(buf, ctx->hs_recv_mbuf.buf, n);
   mbuf_remove(&ctx->hs_recv_mbuf, n);
   mbuf_trim(&ctx->hs_recv_mbuf);
@@ -138,36 +160,33 @@ void mg_ssl_if_init(void) {
 
 enum mg_ssl_if_result mg_ssl_if_conn_accept(struct mg_connection *nc,
                                             struct mg_connection *lc) {
-  struct mg_ssl_if_ctx *ctx = calloc(1, sizeof(*ctx));
-  struct mg_ssl_if_ctx *lc_ctx = lc->ssl_if_data;
+  struct mgos_ssl_if_mbed_ctx *ctx = calloc(1, sizeof(*ctx));
+  struct mgos_ssl_if_mbed_ctx *lc_ctx = lc->ssl_if_data;
   nc->ssl_if_data = ctx;
   if (ctx == NULL || lc_ctx == NULL) return MG_SSL_ERROR;
   ctx->ssl = calloc(1, sizeof(*ctx->ssl));
   if (mbedtls_ssl_setup(ctx->ssl, lc_ctx->conf) != 0) {
     return MG_SSL_ERROR;
   }
-  mbedtls_ssl_set_bio(ctx->ssl, nc, mgos_ssl_if_mbed_send_hs,
-                      mgos_ssl_if_mbed_recv_hs, NULL);
   return MG_SSL_OK;
 }
 
-static enum mg_ssl_if_result mg_use_cert(struct mg_ssl_if_ctx *ctx,
+static enum mg_ssl_if_result mg_use_cert(struct mgos_ssl_if_mbed_ctx *ctx,
                                          const char *cert, const char *key,
                                          const char **err_msg);
-static enum mg_ssl_if_result mg_use_ca_cert(struct mg_ssl_if_ctx *ctx,
+static enum mg_ssl_if_result mg_use_ca_cert(struct mgos_ssl_if_mbed_ctx *ctx,
                                             const char *cert);
-static enum mg_ssl_if_result mg_set_cipher_list(struct mg_ssl_if_ctx *ctx,
-                                                const char *ciphers);
+static enum mg_ssl_if_result mg_set_cipher_list(
+    struct mgos_ssl_if_mbed_ctx *ctx, const char *ciphers);
 #ifdef MBEDTLS_KEY_EXCHANGE__SOME__PSK_ENABLED
-static enum mg_ssl_if_result mg_ssl_if_mbed_set_psk(struct mg_ssl_if_ctx *ctx,
-                                                    const char *identity,
-                                                    const char *key);
+static enum mg_ssl_if_result mg_ssl_if_mbed_set_psk(
+    struct mgos_ssl_if_mbed_ctx *ctx, const char *identity, const char *key);
 #endif
 
 enum mg_ssl_if_result mg_ssl_if_conn_init(
     struct mg_connection *nc, const struct mg_ssl_if_conn_params *params,
     const char **err_msg) {
-  struct mg_ssl_if_ctx *ctx = calloc(1, sizeof(*ctx));
+  struct mgos_ssl_if_mbed_ctx *ctx = calloc(1, sizeof(*ctx));
   DBG(("%p %s,%s,%s", nc, (params->cert ? params->cert : ""),
        (params->key ? params->key : ""),
        (params->ca_cert ? params->ca_cert : "")));
@@ -178,10 +197,11 @@ enum mg_ssl_if_result mg_ssl_if_conn_init(
   }
   nc->ssl_if_data = ctx;
   ctx->conf = (mbedtls_ssl_config *) calloc(1, sizeof(*ctx->conf));
-  mbuf_init(&ctx->cipher_suites, 0);
-  mbuf_init(&ctx->hs_recv_mbuf, 0);
   mbedtls_ssl_config_init(ctx->conf);
-  mbedtls_ssl_conf_dbg(ctx->conf, mg_ssl_mbed_log, nc);
+  mbedtls_ssl_conf_dbg(ctx->conf, mgos_ssl_if_mbed_log, nc);
+  mbuf_init(&ctx->cipher_suites, 0);
+  mbuf_init(&ctx->hs_send_mbuf, 0);
+  mbuf_init(&ctx->hs_recv_mbuf, 0);
   if (mbedtls_ssl_config_defaults(
           ctx->conf,
           (nc->flags & MG_F_LISTENING ? MBEDTLS_SSL_IS_SERVER
@@ -191,7 +211,7 @@ enum mg_ssl_if_result mg_ssl_if_conn_init(
     return MG_SSL_ERROR;
   }
 
-  /* TLS 1.2 and up */
+  // TLS 1.2 and up
   mbedtls_ssl_conf_min_version(ctx->conf, MBEDTLS_SSL_MAJOR_VERSION_3,
                                MBEDTLS_SSL_MINOR_VERSION_3);
   mbedtls_ssl_conf_rng(ctx->conf, mg_ssl_if_mbed_random, nc);
@@ -231,8 +251,6 @@ enum mg_ssl_if_result mg_ssl_if_conn_init(
         mbedtls_ssl_set_hostname(ctx->ssl, params->server_name) != 0) {
       return MG_SSL_ERROR;
     }
-    mbedtls_ssl_set_bio(ctx->ssl, nc, mgos_ssl_if_mbed_send_hs,
-                        mgos_ssl_if_mbed_recv_hs, NULL);
   }
 
 #ifdef MG_SSL_IF_MBEDTLS_MAX_FRAG_LEN
@@ -278,7 +296,8 @@ static enum mg_ssl_if_result mg_ssl_if_mbed_err(struct mg_connection *nc,
   return res;
 }
 
-static void mg_ssl_if_mbed_free_certs_and_keys(struct mg_ssl_if_ctx *ctx) {
+static void mg_ssl_if_mbed_free_certs_and_keys(
+    struct mgos_ssl_if_mbed_ctx *ctx) {
   if (ctx->cert != NULL) {
     mbedtls_x509_crt_free(ctx->cert);
     free(ctx->cert);
@@ -300,25 +319,40 @@ static void mg_ssl_if_mbed_free_certs_and_keys(struct mg_ssl_if_ctx *ctx) {
 #endif
 }
 
+static void mgos_ssl_if_mbed_ctx_free(struct mgos_ssl_if_mbed_ctx *ctx) {
+  if (ctx->ssl != NULL) {
+    mbedtls_ssl_free(ctx->ssl);
+    free(ctx->ssl);
+  }
+  if (ctx->conf != NULL) {
+    mbedtls_ssl_config_free(ctx->conf);
+    free(ctx->conf);
+  }
+  mg_ssl_if_mbed_free_certs_and_keys(ctx);
+  mbuf_free(&ctx->cipher_suites);
+  mbuf_free(&ctx->hs_send_mbuf);
+  mbuf_free(&ctx->hs_recv_mbuf);
+  memset(ctx, 0, sizeof(*ctx));
+  free(ctx);
+}
+
 static enum mg_ssl_if_result mg_ssl_if_handshake_common(
     struct mg_connection *nc, int res) {
   if (res != 0) return mg_ssl_if_mbed_err(nc, res);
-  struct mg_ssl_if_ctx *ctx = nc->ssl_if_data;
+  struct mgos_ssl_if_mbed_ctx *ctx = nc->ssl_if_data;
   // Handshake complete, can run directly from now on.
   mbedtls_ssl_set_bio(ctx->ssl, nc, mgos_ssl_if_mbed_send,
                       mgos_ssl_if_mbed_recv, NULL);
 #ifdef MG_SSL_IF_MBEDTLS_FREE_CERTS
-  /*
-   * Free the peer certificate, we don't need it after handshake.
-   * Note that this effectively disables renegotiation.
-   */
+  // Free the peer certificate, we don't need it after handshake.
+  // Note that this effectively disables renegotiation.
   mbedtls_x509_crt_free(ctx->ssl->session->peer_cert);
   mbedtls_free(ctx->ssl->session->peer_cert);
   ctx->ssl->session->peer_cert = NULL;
-  /* On a client connection we can also free our own and CA certs. */
+  // On a client connection we can also free our own and CA certs.
   if (nc->listener == NULL) {
     if (ctx->conf->key_cert != NULL) {
-      /* Note that this assumes one key_cert entry, which matches our init. */
+      // Note that this assumes one key_cert entry, which matches our init.
       free(ctx->conf->key_cert);
       ctx->conf->key_cert = NULL;
     }
@@ -332,17 +366,31 @@ static enum mg_ssl_if_result mg_ssl_if_handshake_common(
 static void mgos_ssl_if_mbed_handshake_post(void *arg);
 
 static void mgos_ssl_if_mbed_handshake(void *arg) {
-  struct mg_connection *nc = arg;
-  struct mg_ssl_if_ctx *ctx = nc->ssl_if_data;
-  ctx->hs_result = mbedtls_ssl_handshake(ctx->ssl);
-  mgos_invoke_cb(mgos_ssl_if_mbed_handshake_post, nc, 0);
+  struct mgos_ssl_if_mbed_hs_ctx *hs_ctx = arg;
+  struct mgos_ssl_if_mbed_ctx *ctx = hs_ctx->ctx;
+  DBG(("%p mgos_ssl_if_mbed_handshake %d", hs_ctx->nc, hs_ctx->orphaned));
+  if (!hs_ctx->orphaned) {
+    ctx->hs_result = mbedtls_ssl_handshake(ctx->ssl);
+  }
+  mgos_invoke_cb(mgos_ssl_if_mbed_handshake_post, hs_ctx, 0);
 }
 
 static void mgos_ssl_if_mbed_handshake_post(void *arg) {
-  struct mg_connection *nc = arg;
-  struct mg_ssl_if_ctx *ctx = nc->ssl_if_data;
+  struct mgos_ssl_if_mbed_hs_ctx *hs_ctx = arg;
+  struct mgos_ssl_if_mbed_ctx *ctx = hs_ctx->ctx;
+  if (hs_ctx->orphaned) {
+    // Orphaned: connection closed before we got a chance to run.
+    // We are responsible for disposing of the context, do it.
+    DBG(("SSL context has been orphaned, disposing"));
+    mgos_ssl_if_mbed_ctx_free(ctx);
+    free(hs_ctx);
+    return;
+  }
+  struct mg_connection *nc = hs_ctx->nc;
   DBG(("%p mbedtls_ssl_handshake() -> %d", nc, ctx->hs_result));
   ctx->hs_state = MGOS_SSL_IF_MBED_HS_STATE_DONE;
+  ctx->hs_ctx = NULL;
+  free(hs_ctx);
   mg_if_can_send_cb(nc);  // Trigger connection reprocessing.
 }
 
@@ -357,22 +405,28 @@ static void move_or_append_mbuf(struct mbuf *from, struct mbuf *to) {
 }
 
 static enum mg_ssl_if_result send_some(struct mg_connection *nc) {
-  if (nc->send_mbuf.len == 0) return MG_SSL_WANT_READ;
-  int n = nc->send_mbuf.len;
+  struct mgos_ssl_if_mbed_ctx *ctx = nc->ssl_if_data;
+  struct mbuf *mb = &ctx->hs_send_mbuf;
+  int n = mb->len;
+  if (n == 0) return MG_SSL_WANT_READ;
   if (n > MG_TCP_IO_SIZE) n = MG_TCP_IO_SIZE;
-  n = nc->iface->vtable->tcp_send(nc, nc->send_mbuf.buf, n);
-  if (n > 0) mbuf_remove(&nc->send_mbuf, n);
-  mbuf_trim(&nc->send_mbuf);
-  return (nc->send_mbuf.len > 0 ? MG_SSL_WANT_WRITE : MG_SSL_WANT_READ);
+  int res = nc->iface->vtable->tcp_send(nc, mb->buf, n);
+  DBG(("%p SSL HS TCP -> %d res %d", nc, n, res));
+  if (res > 0) {
+    mbuf_remove(mb, n);
+    mbuf_trim(mb);
+  }
+  return (mb->len > 0 ? MG_SSL_WANT_WRITE : MG_SSL_WANT_READ);
 }
 
 enum mg_ssl_if_result mg_ssl_if_handshake(struct mg_connection *nc) {
   assert(!(nc->flags & MG_F_SSL_HANDSHAKE_DONE));
-  struct mg_ssl_if_ctx *ctx = nc->ssl_if_data;
-  DBG(("mg_ssl_if_handshake %d %d %d %d", (int) ctx->hs_state, ctx->hs_result,
-       (int) nc->send_mbuf.len, (int) nc->recv_mbuf.len));
+  struct mgos_ssl_if_mbed_ctx *ctx = nc->ssl_if_data;
+  DBG(("%p mg_ssl_if_handshake st %d res %d sb %d rb %d flags %#x", nc,
+       (int) ctx->hs_state, ctx->hs_result, (int) ctx->hs_send_mbuf.len,
+       (int) ctx->hs_recv_mbuf.len, (int) nc->flags));
   switch (ctx->hs_state) {
-    case MGOS_SSL_IF_MBED_HS_STATE_IDLE:
+    case MGOS_SSL_IF_MBED_HS_STATE_IDLE: {
       // mbedTLS will always consume all of the data, wait for it to happen,
       // don't buffer too much.
       if (nc->recv_mbuf.len == 0) {
@@ -387,37 +441,38 @@ enum mg_ssl_if_result mg_ssl_if_handshake(struct mg_connection *nc) {
           nc->flags |= MG_F_CLOSE_IMMEDIATELY;
         }
       }
-      if (ctx->hs_result == MBEDTLS_ERR_SSL_WANT_WRITE ||
-          (ctx->hs_result == MBEDTLS_ERR_SSL_WANT_READ &&
-           nc->recv_mbuf.len == 0)) {
-        return send_some(nc);
-      }
+      send_some(nc);
       move_or_append_mbuf(&nc->recv_mbuf, &ctx->hs_recv_mbuf);
       mbuf_trim(&ctx->hs_recv_mbuf);
-      ctx->hs_state = MGOS_SSL_IF_MBED_HS_STATE_PENDING;
-      mgos_invoke_cb(mgos_ssl_if_mbed_handshake, nc, MGOS_INVOKE_CB_F_BG_TASK);
+      struct mgos_ssl_if_mbed_hs_ctx *hs_ctx = calloc(1, sizeof(*hs_ctx));
+      if (hs_ctx == NULL) return MG_SSL_WANT_READ;
+      hs_ctx->nc = nc;
+      hs_ctx->ctx = ctx;
+      ctx->hs_ctx = hs_ctx;
+      ctx->hs_state = MGOS_SSL_IF_MBED_HS_STATE_WORKING;
+      mbedtls_ssl_set_bio(ctx->ssl, hs_ctx, mgos_ssl_if_mbed_send_hs,
+                          mgos_ssl_if_mbed_recv_hs, NULL);
+      mgos_invoke_cb(mgos_ssl_if_mbed_handshake, hs_ctx,
+                     MGOS_INVOKE_CB_F_BG_TASK);
       return MG_SSL_WANT_READ;
-    case MGOS_SSL_IF_MBED_HS_STATE_PENDING:
+    }
+    case MGOS_SSL_IF_MBED_HS_STATE_WORKING: {
       return MG_SSL_WANT_READ;
-    case MGOS_SSL_IF_MBED_HS_STATE_DONE:
+    }
+    case MGOS_SSL_IF_MBED_HS_STATE_DONE: {
+      int hs_result = ctx->hs_result;
+      ctx->hs_result = 0;
       ctx->hs_state = MGOS_SSL_IF_MBED_HS_STATE_IDLE;
-      if (nc->send_mbuf.len > 0) send_some(nc);
-      return mg_ssl_if_handshake_common(nc, ctx->hs_result);
+      send_some(nc);
+      return mg_ssl_if_handshake_common(nc, hs_result);
+    }
   }
   return MG_SSL_WANT_READ;
 }
 
-enum mg_ssl_if_result mg_ssl_if_handshake_direct(struct mg_connection *nc) {
-  assert(!(nc->flags & MG_F_SSL_HANDSHAKE_DONE));
-  struct mg_ssl_if_ctx *ctx = nc->ssl_if_data;
-  int res = mbedtls_ssl_handshake(ctx->ssl);
-  DBG(("%p mbedtls_ssl_handshake() -> %d", nc, res));
-  return mg_ssl_if_handshake_common(nc, res);
-}
-
 int mg_ssl_if_read(struct mg_connection *nc, void *buf, size_t len) {
   assert(nc->flags & MG_F_SSL_HANDSHAKE_DONE);
-  struct mg_ssl_if_ctx *ctx = nc->ssl_if_data;
+  struct mgos_ssl_if_mbed_ctx *ctx = nc->ssl_if_data;
   int n = mbedtls_ssl_read(ctx->ssl, (unsigned char *) buf, len);
   DBG(("%p SSL <- %d", nc, n));
   if (n < 0) return mg_ssl_if_mbed_err(nc, n);
@@ -427,13 +482,13 @@ int mg_ssl_if_read(struct mg_connection *nc, void *buf, size_t len) {
 
 int mg_ssl_if_write(struct mg_connection *nc, const void *buf, size_t len) {
   assert(nc->flags & MG_F_SSL_HANDSHAKE_DONE);
-  struct mg_ssl_if_ctx *ctx = nc->ssl_if_data;
-  /* Per mbedTLS docs, if write returns WANT_READ or WANT_WRITE, the operation
-   * should be retried with the same data and length.
-   * Here we assume that the data being pushed will remain the same but the
-   * amount may grow between calls so we save the length that was used and
-   * retry. The assumption being that the data itself won't change and won't
-   * be removed. */
+  struct mgos_ssl_if_mbed_ctx *ctx = nc->ssl_if_data;
+  // Per mbedTLS docs, if write returns WANT_READ or WANT_WRITE, the operation
+  // should be retried with the same data and length.
+  // Here we assume that the data being pushed will remain the same but the
+  // amount may grow between calls so we save the length that was used and
+  // retry. The assumption being that the data itself won't change and won't
+  // be removed.
   size_t l = len;
   if (ctx->saved_len > 0 && ctx->saved_len < l) l = ctx->saved_len;
   int n = mbedtls_ssl_write(ctx->ssl, (const unsigned char *) buf, l);
@@ -451,30 +506,26 @@ int mg_ssl_if_write(struct mg_connection *nc, const void *buf, size_t len) {
 }
 
 void mg_ssl_if_conn_close_notify(struct mg_connection *nc) {
-  struct mg_ssl_if_ctx *ctx = nc->ssl_if_data;
+  struct mgos_ssl_if_mbed_ctx *ctx = nc->ssl_if_data;
   if (ctx == NULL || !(nc->flags & MG_F_SSL_HANDSHAKE_DONE)) return;
   mbedtls_ssl_close_notify(ctx->ssl);
 }
 
 void mg_ssl_if_conn_free(struct mg_connection *nc) {
-  struct mg_ssl_if_ctx *ctx = nc->ssl_if_data;
+  struct mgos_ssl_if_mbed_ctx *ctx = nc->ssl_if_data;
   if (ctx == NULL) return;
   nc->ssl_if_data = NULL;
-  if (ctx->ssl != NULL) {
-    mbedtls_ssl_free(ctx->ssl);
-    free(ctx->ssl);
+  if (ctx->hs_state == MGOS_SSL_IF_MBED_HS_STATE_WORKING) {
+    // Handshake callback is pending, detach it and let it dispose of the
+    // context when it gets a chance to run.
+    DBG(("SSL context is pending, orphaning"));
+    ctx->hs_ctx->orphaned = true;
+    return;
   }
-  if (ctx->conf != NULL) {
-    mbedtls_ssl_config_free(ctx->conf);
-    free(ctx->conf);
-  }
-  mg_ssl_if_mbed_free_certs_and_keys(ctx);
-  mbuf_free(&ctx->cipher_suites);
-  memset(ctx, 0, sizeof(*ctx));
-  free(ctx);
+  mgos_ssl_if_mbed_ctx_free(ctx);
 }
 
-static enum mg_ssl_if_result mg_use_ca_cert(struct mg_ssl_if_ctx *ctx,
+static enum mg_ssl_if_result mg_use_ca_cert(struct mgos_ssl_if_mbed_ctx *ctx,
                                             const char *ca_cert) {
   if (ca_cert == NULL || strcmp(ca_cert, "*") == 0) {
     mbedtls_ssl_conf_authmode(ctx->conf, MBEDTLS_SSL_VERIFY_NONE);
@@ -499,7 +550,7 @@ static enum mg_ssl_if_result mg_use_ca_cert(struct mg_ssl_if_ctx *ctx,
   return MG_SSL_OK;
 }
 
-static enum mg_ssl_if_result mg_use_cert(struct mg_ssl_if_ctx *ctx,
+static enum mg_ssl_if_result mg_use_cert(struct mgos_ssl_if_mbed_ctx *ctx,
                                          const char *cert, const char *key,
                                          const char **err_msg) {
   if (key == NULL) key = cert;
@@ -571,8 +622,8 @@ static const int mg_s_cipher_list[] = {
  * https://github.com/ARMmbed/mbedtls/blob/development/library/ssl_ciphersuites.c#L267
  * E.g.: TLS-ECDHE-ECDSA-WITH-AES-128-GCM-SHA256:TLS-DHE-RSA-WITH-AES-256-CCM
  */
-static enum mg_ssl_if_result mg_set_cipher_list(struct mg_ssl_if_ctx *ctx,
-                                                const char *ciphers) {
+static enum mg_ssl_if_result mg_set_cipher_list(
+    struct mgos_ssl_if_mbed_ctx *ctx, const char *ciphers) {
   if (ciphers != NULL) {
     int l, id;
     const char *s = ciphers, *e;
@@ -602,9 +653,9 @@ static enum mg_ssl_if_result mg_set_cipher_list(struct mg_ssl_if_ctx *ctx,
 }
 
 #ifdef MBEDTLS_KEY_EXCHANGE__SOME__PSK_ENABLED
-static enum mg_ssl_if_result mg_ssl_if_mbed_set_psk(struct mg_ssl_if_ctx *ctx,
-                                                    const char *identity,
-                                                    const char *key_str) {
+static enum mg_ssl_if_result mg_ssl_if_mbed_set_psk(
+    struct mgos_ssl_if_mbed_ctx *ctx, const char *identity,
+    const char *key_str) {
   unsigned char key[32];
   size_t key_len;
   if (identity == NULL && key_str == NULL) return MG_SSL_OK;
