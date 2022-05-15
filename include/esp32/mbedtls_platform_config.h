@@ -5,9 +5,6 @@
 
 #pragma once
 
-/* Required by NimBLE. TODO: Move to common config. */
-#define MBEDTLS_CMAC_C
-
 #define MBEDTLS_AES_ALT
 #define MBEDTLS_MPI_MUL_MPI_ALT
 #define MBEDTLS_MPI_EXP_MOD_ALT
