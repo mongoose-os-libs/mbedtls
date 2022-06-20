@@ -1,11 +1,11 @@
 author: mongoose-os
 description: Mongoose OS port of mbedTLS
 type: lib
-version: 2.16.11-cesanta2
+version: 2.16.11-cesanta3
 
 modules:
   - location: https://github.com/mongoose-os/mbedtls
-    version: 2.16.11-cesanta2
+    version: 2.16.11-cesanta3
     name: mbedtls_module
 
 sources:
@@ -19,7 +19,7 @@ includes:
   - ${mos.modules.mbedtls_module.path}/include
 
 cdefs:
-  MBEDTLS_USER_CONFIG_FILE: '\"mbedtls_platform_config.h\"'
+  MBEDTLS_USER_CONFIG_FILE: mbedtls_platform_config.h
   # Do not load CA chain into memory, read it from file during verification.
   # This make handshake slower but saves a lot of memory.
   MBEDTLS_X509_CA_CHAIN_ON_DISK: 1
