@@ -67,6 +67,14 @@ conds:
       includes:
         - include/cc32xx
 
+  - when: mos.platform == "esp32c3"
+    apply:
+      build_vars:
+        # TODO(rojer): Enable hardware crypto acceleration.
+        ESP_IDF_SDKCONFIG_OPTS: >
+          ${build_vars.ESP_IDF_SDKCONFIG_OPTS}
+          CONFIG_MBEDTLS_HARDWARE_MPI=n
+
   - when: build_vars.MGOS_MBEDTLS_ENABLE_ATCA == "1"
     apply:
       libs:
