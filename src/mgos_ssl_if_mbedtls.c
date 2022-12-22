@@ -32,7 +32,7 @@
 #include "mbedtls/x509_crt.h"
 
 #ifndef MG_TCP_IO_SIZE
-#define MG_TCP_IO_SIZE 1460
+#define MG_TCP_IO_SIZE 1440
 #endif
 
 #define MG_SET_PTRPTR(_ptr, _v) \
@@ -371,6 +371,7 @@ static void mgos_ssl_if_mbed_handshake(void *arg) {
   DBG(("%p mgos_ssl_if_mbed_handshake %d", hs_ctx->nc, hs_ctx->orphaned));
   if (!hs_ctx->orphaned) {
     ctx->hs_result = mbedtls_ssl_handshake(ctx->ssl);
+    DBG(("%p mbedtls_ssl_handshake -> %d", hs_ctx->nc, ctx->hs_result));
   }
   mgos_invoke_cb(mgos_ssl_if_mbed_handshake_post, hs_ctx, 0);
 }
@@ -411,11 +412,11 @@ static enum mg_ssl_if_result send_some(struct mg_connection *nc) {
   if (n == 0) return MG_SSL_WANT_READ;
   if (n > MG_TCP_IO_SIZE) n = MG_TCP_IO_SIZE;
   int res = nc->iface->vtable->tcp_send(nc, mb->buf, n);
-  DBG(("%p SSL HS TCP -> %d res %d", nc, n, res));
   if (res > 0) {
     mbuf_remove(mb, n);
     mbuf_trim(mb);
   }
+  DBG(("%p SSL HS TCP -> %d res %d left %d", nc, n, res, (int) mb->len));
   return (mb->len > 0 ? MG_SSL_WANT_WRITE : MG_SSL_WANT_READ);
 }
 
@@ -425,6 +426,7 @@ enum mg_ssl_if_result mg_ssl_if_handshake(struct mg_connection *nc) {
   DBG(("%p mg_ssl_if_handshake st %d res %d sb %d rb %d flags %#x", nc,
        (int) ctx->hs_state, ctx->hs_result, (int) ctx->hs_send_mbuf.len,
        (int) ctx->hs_recv_mbuf.len, (int) nc->flags));
+  nc->flags &= ~(MG_F_WANT_READ | MG_F_WANT_WRITE);
   switch (ctx->hs_state) {
     case MGOS_SSL_IF_MBED_HS_STATE_IDLE: {
       // mbedTLS will always consume all of the data, wait for it to happen,
@@ -460,10 +462,12 @@ enum mg_ssl_if_result mg_ssl_if_handshake(struct mg_connection *nc) {
       return MG_SSL_WANT_READ;
     }
     case MGOS_SSL_IF_MBED_HS_STATE_DONE: {
-      int hs_result = ctx->hs_result;
+      if (send_some(nc) == MG_SSL_WANT_WRITE) {
+        return MG_SSL_WANT_WRITE;
+      }
+      const int hs_result = ctx->hs_result;
       ctx->hs_result = 0;
       ctx->hs_state = MGOS_SSL_IF_MBED_HS_STATE_IDLE;
-      send_some(nc);
       return mg_ssl_if_handshake_common(nc, hs_result);
     }
   }
