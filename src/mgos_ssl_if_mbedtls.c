@@ -413,7 +413,7 @@ static enum mg_ssl_if_result send_some(struct mg_connection *nc) {
   if (n > MG_TCP_IO_SIZE) n = MG_TCP_IO_SIZE;
   int res = nc->iface->vtable->tcp_send(nc, mb->buf, n);
   if (res > 0) {
-    mbuf_remove(mb, n);
+    mbuf_remove(mb, res);
     mbuf_trim(mb);
   }
   DBG(("%p SSL HS TCP -> %d res %d left %d", nc, n, res, (int) mb->len));
